@@ -2,7 +2,6 @@
 API Gateway Defender — FastAPI Server
 =====================================
 Exposes the OpenEnv-compliant HTTP API for the environment.
-
 Endpoints
 ---------
   POST /reset       — Start a new episode
@@ -91,7 +90,6 @@ async def reset(
 ) -> Dict[str, Any]:
     """
     Start a new episode.
-
     Accepts ALL of these formats (validator may use any):
       - JSON body:    {"task_id": "easy"}
       - Query param:  POST /reset?task_id=easy
@@ -111,9 +109,7 @@ async def reset(
 def step(action: Action) -> Dict[str, Any]:
     """
     Submit one firewall rule.
-
     Returns StepResult: {observation, reward, done, info}
-
     Reward score: 0.0–1.0
       = detection_rate − (false_positive_rate × 5)
       = 0.0 if false positive rate > 10%
