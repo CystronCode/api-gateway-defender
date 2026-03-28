@@ -24,7 +24,7 @@ COPY --from=builder /install /usr/local
 # Copy application code
 COPY env.py      .
 COPY main.py     .
-COPY baseline.py .
+COPY inference.py .
 
 # HF Spaces: non-root user for safety
 RUN useradd -m -u 1000 appuser && chown -R appuser /app
