@@ -17,6 +17,7 @@ Endpoints
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Any, Dict
+from pydantic import BaseModel
 
 from env import (
     Action,
@@ -46,7 +47,8 @@ app.add_middleware(
 
 # Single shared environment instance (stateful, per-session)
 _env = APIGatewayDefender()
-
+class ResetRequest(BaseModel):
+    task_id: str = "easy"
 
 # ─── Routes ──────────────────────────────────────────────────────────────────────
 
@@ -80,18 +82,13 @@ def root() -> Dict[str, Any]:
 
 
 @app.post("/reset")
-def reset(body: Dict[str, str] = None) -> Dict[str, Any]:
+def reset(req: ResetRequest = ResetRequest()) -> Dict[str, Any]:
     """
     Start a new episode.
-
-    Request body (JSON):
-        {"task_id": "easy" | "medium" | "hard"}
-
-    Returns the initial Observation.
+    Request body (JSON): {"task_id": "easy" | "medium" | "hard"}
     """
-    task_id = (body or {}).get("task_id", "easy")
     try:
-        obs: Observation = _env.reset(task_id=task_id)
+        obs: Observation = _env.reset(task_id=req.task_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return obs.model_dump()
