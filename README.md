@@ -1,13 +1,13 @@
 ---
-title: Api Gateway Defender
-emoji: 🏃
+title: API Gateway Defender
+emoji: 🛡️
 colorFrom: red
-colorTo: red
+colorTo: blue
 sdk: docker
-pinned: false
-license: mit
+app_port: 7860
 tags:
   - openenv
+short_description: OpenEnv RL environment for web traffic defense
 ---
 # API Gateway Defender: OpenEnv Environment
 
