@@ -14,9 +14,9 @@ Endpoints
   GET  /health      — Liveness probe (required for HF Spaces ping)
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 from env import (
@@ -47,8 +47,11 @@ app.add_middleware(
 
 # Single shared environment instance (stateful, per-session)
 _env = APIGatewayDefender()
+
+
 class ResetRequest(BaseModel):
     task_id: str = "easy"
+
 
 # ─── Routes ──────────────────────────────────────────────────────────────────────
 
@@ -82,13 +85,23 @@ def root() -> Dict[str, Any]:
 
 
 @app.post("/reset")
-def reset(req: ResetRequest = ResetRequest()) -> Dict[str, Any]:
+async def reset(
+    req: Optional[ResetRequest] = None,
+    task_id: Optional[str] = Query(default=None),
+) -> Dict[str, Any]:
     """
     Start a new episode.
-    Request body (JSON): {"task_id": "easy" | "medium" | "hard"}
+
+    Accepts ALL of these formats (validator may use any):
+      - JSON body:    {"task_id": "easy"}
+      - Query param:  POST /reset?task_id=easy
+      - Empty body:   POST /reset  (defaults to "easy")
+      - No body at all: POST /reset  (defaults to "easy")
     """
+    # Priority: JSON body > query param > default "easy"
+    tid = (req.task_id if req else None) or task_id or "easy"
     try:
-        obs: Observation = _env.reset(task_id=req.task_id)
+        obs: Observation = _env.reset(task_id=tid)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return obs.model_dump()
