@@ -102,7 +102,7 @@ async def reset(
         obs: Observation = _env.reset(task_id=tid)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    return obs.model_dump()
+    return {"observation": obs.model_dump()}
 
 
 @app.post("/step")
