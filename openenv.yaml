@@ -1,0 +1,172 @@
+name: api-gateway-defender
+version: "1.0.0"
+description: >
+  A simulated HTTP traffic monitoring environment where an AI agent acts as
+  a Site Reliability Engineer defending a web backend. The agent inspects a
+  stream of incoming HTTP requests and must configure middleware firewall rules
+  to block malicious traffic while preserving legitimate user requests.
+
+  Models a real production incident domain: rate-limiting, WAF rule authoring,
+  and pattern-based traffic filtering — skills that are highly valued in DevOps,
+  SRE, and cybersecurity engineering.
+
+author: "API Gateway Defender Team"
+license: "Apache-2.0"
+
+tags:
+  - openenv
+  - cybersecurity
+  - web-security
+  - sre
+  - real-world
+  - devops
+  - rate-limiting
+  - waf
+
+tasks:
+  - id: easy
+    name: "Volumetric IP Flood Defense"
+    difficulty: easy
+    max_score: 1.0
+    description: >
+      A single IP address is flooding the /login endpoint with POST requests.
+      The agent must identify the malicious IP from traffic logs and block it
+      (or apply a rate limit). Tests pattern recognition under high-volume noise.
+    success_criteria: >
+      block_ip or add_rate_limit action targeting the flooding IP address,
+      achieving ≥0.95 detection rate with <10% false positive rate.
+
+  - id: medium
+    name: "Scraper Bot Detection"
+    difficulty: medium
+    max_score: 1.0
+    description: >
+      A scraper bot harvests the /api/data endpoint from 50 different IP addresses,
+      rotating them to evade IP-based blocks. All malicious requests share one
+      identical unusual User-Agent string. The agent must identify and block it.
+    success_criteria: >
+      block_user_agent action with the exact malicious User-Agent string,
+      achieving ≥0.95 detection rate with <10% false positive rate.
+
+  - id: hard
+    name: "SQL Injection Middleware Defense"
+    difficulty: hard
+    max_score: 1.0
+    description: >
+      An attacker probes the database via SQL injection. They rotate IP addresses
+      AND User-Agents on every request to evade simple rules. Every malicious
+      request contains a SQL injection payload in the query string. The agent
+      must write a regex-based middleware rule to detect and block all payloads.
+    success_criteria: >
+      write_custom_middleware action with a regex that matches 'UNION SELECT'
+      pattern (case-insensitive), achieving ≥0.95 detection rate with <10% FP rate.
+
+observation_space:
+  type: structured
+  description: "Snapshot of recent HTTP traffic and active gateway configuration."
+  fields:
+    - name: recent_requests
+      type: "list[dict]"
+      description: "Last 100 HTTP requests. Each has: ip, method, path, user_agent, query_string, status_code."
+    - name: active_rules
+      type: "list[str]"
+      description: "Human-readable list of firewall rules currently active."
+    - name: current_task
+      type: string
+      description: "Task ID: 'easy', 'medium', or 'hard'."
+    - name: task_description
+      type: string
+      description: "Natural language description of the attack to defend against."
+    - name: step_count
+      type: integer
+      description: "Number of rules submitted in the current episode."
+    - name: hint
+      type: string
+      description: "Statistical hint about suspicious patterns in the visible traffic window."
+
+action_space:
+  type: discrete_parameterized
+  description: "Submit one firewall rule to the gateway middleware."
+  fields:
+    - name: action_type
+      type: string
+      required: true
+      choices:
+        - block_ip
+        - add_rate_limit
+        - block_user_agent
+        - write_custom_middleware
+      description: "Which type of rule to apply."
+    - name: target_ip
+      type: string
+      required: false
+      description: "IP address. Required for block_ip and add_rate_limit."
+    - name: target_user_agent
+      type: string
+      required: false
+      description: "Exact User-Agent string. Required for block_user_agent."
+    - name: regex_pattern
+      type: string
+      required: false
+      description: "Python regex matched against '{path}?{query_string}'. Required for write_custom_middleware."
+    - name: max_requests
+      type: integer
+      required: false
+      default: 60
+      description: "Requests per minute cap. Used with add_rate_limit."
+
+reward:
+  range: [0.0, 1.0]
+  type: continuous
+  formula: >
+    detection_rate = malicious_blocked / total_malicious
+    false_positive_rate = legitimate_blocked / total_legitimate
+    if false_positive_rate > 0.10:
+        score = 0.0
+    else:
+        score = clamp(detection_rate - false_positive_rate * 5.0, 0.0, 1.0)
+  description: >
+    Rewards accurate detection of malicious traffic. Penalises false positives
+    (blocking legitimate users) with a 5x multiplier. Zeroed entirely if
+    false positive rate exceeds 10% — models real operational constraints
+    where blocking paying customers is unacceptable.
+
+episode:
+  max_steps: 5
+  termination_conditions:
+    - "score >= 0.95 (success)"
+    - "step_count >= 5 (step limit)"
+  reset_required: true
+
+evaluation:
+  grader_type: programmatic
+  deterministic: true
+  train_seed: 42
+  test_seed: 137
+  description: >
+    Rules are graded against a hidden test traffic set (seed 137) distinct from
+    the visible training sample (seed 42). This prevents agents from overfitting
+    to specific IPs/UAs in the observation window.
+
+api:
+  framework: FastAPI
+  port: 7860
+  endpoints:
+    - "POST /reset"
+    - "POST /step"
+    - "GET  /state"
+    - "GET  /tasks"
+    - "GET  /grader"
+    - "POST /baseline"
+    - "GET  /health"
+
+baseline:
+  agent_type: heuristic
+  scores:
+    easy: 1.0
+    medium: 1.0
+    hard: 1.0
+  note: >
+    Heuristic agent reads the visible traffic sample, identifies the attack
+    pattern statistically, and applies the optimal rule. Scores are fully
+    reproducible with fixed seeds.
