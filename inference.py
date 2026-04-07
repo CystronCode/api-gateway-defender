@@ -8,8 +8,8 @@ Usage
 -----
   python inference.py
 
-  # With LLM:
-  OPENAI_API_KEY=sk-... python inference.py
+  # With LLM proxy (injected by validator):
+  API_BASE_URL=https://... API_KEY=... python inference.py
 
   # Against a different server:
   ENV_BASE_URL=https://... python inference.py
@@ -21,9 +21,13 @@ import sys
 import urllib.request
 from typing import Any, Dict
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-ENV_BASE_URL   = os.getenv("ENV_BASE_URL", "https://cystroncode-api-gateway-defender.hf.space")
-LLM_MODEL      = os.getenv("LLM_MODEL", "gpt-4o-mini")
+# Use the LiteLLM proxy credentials injected by the validator.
+# API_BASE_URL must end WITHOUT a trailing slash for /chat/completions appending.
+API_KEY      = os.getenv("API_KEY", os.getenv("OPENAI_API_KEY", ""))
+_raw_base    = os.getenv("API_BASE_URL", "").rstrip("/")
+LLM_BASE_URL = _raw_base if _raw_base else "https://api.openai.com/v1"
+ENV_BASE_URL = os.getenv("ENV_BASE_URL", "https://cystroncode-api-gateway-defender.hf.space")
+LLM_MODEL    = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
 TASK_IDS = ["easy", "medium", "hard"]
 
@@ -83,6 +87,7 @@ def _heuristic_action(task_id: str, obs: Dict[str, Any]) -> Dict[str, Any]:
 # ─── LLM agent ────────────────────────────────────────────────────────────────
 
 def _llm_action(task_id: str, obs: Dict[str, Any]) -> Dict[str, Any]:
+    """Call the LiteLLM proxy supplied by the validator via API_BASE_URL / API_KEY."""
     inner_obs = obs.get("observation", obs)
     sample    = inner_obs.get("recent_requests", [])[:25]
     payload   = json.dumps({
@@ -100,11 +105,13 @@ def _llm_action(task_id: str, obs: Dict[str, Any]) -> Dict[str, Any]:
         "max_tokens": 256,
         "temperature": 0.1,
     }).encode()
+    # Always route through the validator-injected LiteLLM proxy endpoint
+    llm_url = f"{LLM_BASE_URL}/chat/completions"
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
+        llm_url,
         data=payload,
         headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {OPENAI_API_KEY}"},
+                 "Authorization": f"Bearer {API_KEY}"},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         raw = json.loads(resp.read())["choices"][0]["message"]["content"].strip()
@@ -125,7 +132,8 @@ def run_task(task_id: str) -> Dict[str, Any]:
 
     for step_num in range(1, 6):
         try:
-            action = _llm_action(task_id, obs) if OPENAI_API_KEY else _heuristic_action(task_id, obs)
+            # Use LLM if a key is available (prefers validator-injected API_KEY)
+            action = _llm_action(task_id, obs) if API_KEY else _heuristic_action(task_id, obs)
         except Exception:
             action = _heuristic_action(task_id, obs)
 
