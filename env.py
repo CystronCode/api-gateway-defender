@@ -470,11 +470,11 @@ class APIGatewayDefender:
 
     def get_task_grader_score(self) -> float:
         """
-        Programmatic grader — returns score 0.0–1.0 for the current episode.
-        Returns 0.0 if no rules have been applied yet.
+        Programmatic grader — returns score strictly in (0, 1) for the current episode.
+        Returns the minimum non-zero score if no rules have been applied yet.
         """
         if not self._rules:
-            return 0.0
+            return 0.001
         return self._grade().score
 
     # ── Private Helpers ────────────────────────────────────────────────────────
@@ -526,6 +526,10 @@ class APIGatewayDefender:
                 f"Check for injection payloads."
             )
 
+    # Validator requires scores strictly between 0 and 1 (exclusive)
+    _SCORE_MIN = 0.001
+    _SCORE_MAX = 0.999
+
     def _grade(self) -> Reward:
         """
         Apply all active rules to the hidden test traffic set and compute a score.
@@ -534,31 +538,34 @@ class APIGatewayDefender:
             detection_rate = malicious_blocked / total_malicious
             fp_rate        = legitimate_blocked / total_legitimate
             if fp_rate > FALSE_POSITIVE_THRESHOLD:
-                score = 0.0   ← too many false positives
+                score = _SCORE_MIN   ← too many false positives
             else:
-                score = clamp(detection_rate - fp_rate * 5.0, 0.0, 1.0)
+                score = clamp(detection_rate - fp_rate * 5.0, _SCORE_MIN, _SCORE_MAX)
+
+        The final score is always strictly in (0, 1) as required by the validator.
         """
         malicious = [r for r in self._test_traffic if r["is_malicious"]]
         legit     = [r for r in self._test_traffic if not r["is_malicious"]]
 
-        mal_blocked  = sum(1 for r in malicious if any(rule.blocks(r) for rule in self._rules))
-        legit_blocked = sum(1 for r in legit    if any(rule.blocks(r) for rule in self._rules))
+        mal_blocked   = sum(1 for r in malicious if any(rule.blocks(r) for rule in self._rules))
+        legit_blocked = sum(1 for r in legit     if any(rule.blocks(r) for rule in self._rules))
 
-        total_mal  = len(malicious)
+        total_mal   = len(malicious)
         total_legit = len(legit)
 
         detection_rate = mal_blocked  / total_mal   if total_mal   > 0 else 0.0
         fp_rate        = legit_blocked / total_legit if total_legit > 0 else 0.0
 
         if fp_rate > FALSE_POSITIVE_THRESHOLD:
-            score = 0.0
+            score = self._SCORE_MIN
             message = (
-                f"Score zeroed: {fp_rate:.1%} false positive rate exceeds "
+                f"Score floored: {fp_rate:.1%} false positive rate exceeds "
                 f"{FALSE_POSITIVE_THRESHOLD:.0%} threshold. Rules are too broad — "
                 f"legitimate users are being blocked."
             )
         else:
-            score   = max(0.0, min(1.0, detection_rate - fp_rate * 5.0))
+            raw   = detection_rate - fp_rate * 5.0
+            score = max(self._SCORE_MIN, min(self._SCORE_MAX, raw))
             message = (
                 f"Blocked {mal_blocked}/{total_mal} malicious requests "
                 f"({detection_rate:.1%} detection rate) with "
